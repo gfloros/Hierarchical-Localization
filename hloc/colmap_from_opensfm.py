@@ -44,10 +44,6 @@ def read_tracks(opensfm_path):
             feature_id = int(row[2])
             x = float(row[3])
             y = float(row[4])
-            scale = float(row[5])
-            r = int(row[6])
-            g = int(row[7])
-            b = int(row[8])
             img = images_points_map.get(shot_id, None)
             if img is None:
                 images_points_map[shot_id] = list()
@@ -55,9 +51,11 @@ def read_tracks(opensfm_path):
             point = points_map.get(feature_id, None)
             if point is None:
                 points_map[feature_id] = list()
-            points_map[feature_id].append({"shot_id": shot_id, "track_id": track_id})
+            points_map[feature_id].append(
+                {"shot_id": shot_id, "track_id": track_id}
+            )
     return images_points_map, points_map
-        
+
 
 def read_opensfm_model(opensfm_path, images_points_map, points_map):
     logger.info("Reading OpenSfM reconstruction...")
@@ -123,8 +121,16 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
         qvec = angle_axis_to_quaternion(rvec)
         tvec_arr = np.array([tvec[0], tvec[1], tvec[2]])
         images_points = images_points_map.get(key, [])
-        xys = np.array([[p["x"], p["y"]] for p in images_points if point3d_ids_map.get(p["feature_id"], None)], float)
-        point3d_ids = np.array([point3d_ids_map[p["feature_id"]] for p in images_points if point3d_ids_map.get(p["feature_id"], None)], int)
+        xys = np.array(
+            [[p["x"], p["y"]] for p in images_points \
+                if point3d_ids_map.get(p["feature_id"], None)], 
+            float
+        )
+        point3d_ids = np.array(
+            [point3d_ids_map[p["feature_id"]] for p in images_points \
+                if point3d_ids_map.get(p["feature_id"], None)],
+            int
+        )
         image = Image(
             id=image_id,
             qvec=qvec,
