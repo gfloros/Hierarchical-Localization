@@ -78,7 +78,7 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
             model=camera_model.model_name,
             width=width,
             height=height,
-            params=[]
+            params=[],
         )
         cameras[camera_id] = camera
     image_ids_map = {}
@@ -120,10 +120,22 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
         qvec = angle_axis_to_quaternion(rvec)
         tvec_arr = np.array([tvec[0], tvec[1], tvec[2]])
         images_points = images_points_map.get(key, [])
-        xys = np.array([[p["x"], p["y"]] for p in images_points
-                        if point3d_ids_map.get(p["feature_id"], None)], float)
-        point3d_ids = np.array([point3d_ids_map[p["feature_id"]] for p in images_points
-                                if point3d_ids_map.get(p["feature_id"], None)], int)
+        xys = np.array(
+            [
+                [p["x"], p["y"]]
+                for p in images_points
+                if point3d_ids_map.get(p["feature_id"], None)
+            ],
+            float,
+        )
+        point3d_ids = np.array(
+            [
+                point3d_ids_map[p["feature_id"]]
+                for p in images_points
+                if point3d_ids_map.get(p["feature_id"], None)
+            ],
+            int,
+        )
         image = Image(
             id=image_id,
             qvec=qvec,
