@@ -3,11 +3,10 @@ import csv
 import json
 import math
 import typing
-
 from pathlib import Path
-from tqdm import tqdm
 
 import numpy as np
+from tqdm import tqdm
 
 from hloc import logger
 from hloc.utils.read_write_model import (
@@ -15,7 +14,7 @@ from hloc.utils.read_write_model import (
     Camera,
     Image,
     Point3D,
-    write_model
+    write_model,
 )
 
 
