@@ -2,7 +2,6 @@ import argparse
 import csv
 import json
 import math
-import typing
 from pathlib import Path
 
 import numpy as np
@@ -18,7 +17,7 @@ from hloc.utils.read_write_model import (
 )
 
 
-def angle_axis_to_quaternion(angle_axis: np.ndarray) -> typing.List[float]:
+def angle_axis_to_quaternion(angle_axis: np.ndarray) -> list[float]:
     angle = np.linalg.norm(angle_axis)
     x = angle_axis[0] / angle
     y = angle_axis[1] / angle
