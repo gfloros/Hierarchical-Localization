@@ -29,7 +29,9 @@ def angle_axis_to_quaternion(angle_axis: np.ndarray) -> list[float]:
     return np.array([qw, float(qx), float(qy), float(qz)])
 
 
-def read_tracks(opensfm_path):
+def read_tracks(
+    opensfm_path: str,
+) -> tuple[dict[str, list[dict]], dict[int, list[dict]]]:
     logger.info("Reading OpenSfM tracks...")
     images_points_map = {}
     points_map = {}
@@ -55,13 +57,7 @@ def read_tracks(opensfm_path):
     return images_points_map, points_map
 
 
-def read_opensfm_model(opensfm_path, images_points_map, points_map):
-    logger.info("Reading OpenSfM reconstruction...")
-    with open(opensfm_path / "reconstruction.json", "r") as fin:
-        reconstructions_json = json.load(fin)
-    assert len(reconstructions_json) == 1
-    reconstruction_json = reconstructions_json[0]
-    logger.info("Reading cameras...")
+def read_cameras(reconstruction_json: dict) -> tuple[dict[int, Camera], dict[str, int]]:
     camera_ids_map = {}
     cameras = {}
     for idx, (key, value) in enumerate(reconstruction_json["cameras"].items()):
@@ -80,10 +76,21 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
             params=[],
         )
         cameras[camera_id] = camera
+    return cameras, camera_ids_map
+
+
+def sniff_images(reconstruction_json: dict) -> dict[str, int]:
     image_ids_map = {}
     for idx, key in enumerate(reconstruction_json["shots"].keys()):
         image_ids_map[key] = idx
-    logger.info("Reading points...")
+    return image_ids_map
+
+
+def read_points(
+    reconstruction_json: dict,
+    points_map: dict[int, list[dict]],
+    image_ids_map: dict[str, int],
+) -> tuple[dict[int, Point3D], dict[int, int]]:
     point3d_ids_map = {}
     points3d = {}
     num_points = len(reconstruction_json["points"])
@@ -108,7 +115,16 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
         points3d[idx] = point
         pbar.update(1)
     pbar.close()
-    logger.info("Reading images...")
+    return points3d, point3d_ids_map
+
+
+def read_images(
+    reconstruction_json: dict,
+    camera_ids_map: dict[str, int],
+    image_ids_map: dict[str, int],
+    image_points_map: dict[str, list[dict]],
+    point3d_ids_map: dict[int, int],
+) -> dict[int, Image]:
     images = {}
     for key, value in reconstruction_json["shots"].items():
         camera_id = camera_ids_map[value["camera"]]
@@ -118,7 +134,7 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
         tvec = value["translation"]
         qvec = angle_axis_to_quaternion(rvec)
         tvec_arr = np.array([tvec[0], tvec[1], tvec[2]])
-        images_points = images_points_map.get(key, [])
+        images_points = image_points_map.get(key, [])
         xys = np.array(
             [
                 [p["x"], p["y"]]
@@ -145,11 +161,43 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
             point3D_ids=point3d_ids,
         )
         images[image_id] = image
+    return images
+
+
+def read_opensfm_model(
+    opensfm_path: str,
+    images_points_map: dict[str, list[dict]],
+    points_map: dict[int, list[dict]],
+) -> tuple[dict[int, Camera], dict[int, Image], dict[int, Point3D]]:
+    logger.info("Reading OpenSfM reconstruction...")
+    with open(opensfm_path / "reconstruction.json", "r") as fin:
+        reconstructions_json = json.load(fin)
+    assert len(reconstructions_json) == 1
+    reconstruction_json = reconstructions_json[0]
+    logger.info("Reading cameras...")
+    cameras, camera_ids_map = read_cameras(reconstruction_json)
+    logger.info("Sniffing images...")
+    image_ids_map = sniff_images(reconstruction_json)
+    logger.info("Reading points...")
+    points3d, point3d_ids_map = read_points(
+        reconstruction_json,
+        points_map,
+        image_ids_map,
+    )
+    logger.info("Reading images...")
+    images = read_images(
+        reconstruction_json,
+        camera_ids_map,
+        image_ids_map,
+        images_points_map,
+        point3d_ids_map,
+    )
     return cameras, images, points3d
 
 
-def main(opensfm_path, output):
+def main(opensfm_path: str, output: str) -> None:
     assert opensfm_path.exists(), opensfm_path
+
     logger.info("Reading the OpenSfM tracks...")
     images_points_map, points_map = read_tracks(opensfm_path)
 
