@@ -96,12 +96,13 @@ def read_points(
     num_points = len(reconstruction_json["points"])
     pbar = tqdm(total=num_points, unit="pts")
     for idx, (key, value) in enumerate(reconstruction_json["points"].items()):
-        point3d_ids_map[int(key)] = idx
+        point_id = int(key)
+        point3d_ids_map[point_id] = idx
         coordinates = value["coordinates"]
         color = value["color"]
         xyz = np.array([coordinates[0], coordinates[1], coordinates[2]], float)
         color_arr = np.array([color[0], color[1], color[2]], int)
-        points = points_map.get(key, [])
+        points = points_map.get(point_id, [])
         image_ids = np.array([image_ids_map[p["shot_id"]] for p in points], int)
         points2d_idxs = np.array([p["track_id"] for p in points], int)
         point = Point3D(
