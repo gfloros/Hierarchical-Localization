@@ -1,3 +1,8 @@
+"""
+Functionality to convert an OpenSfM reconstruction to a format
+that can be consumed by hloc.
+"""
+
 import argparse
 import collections
 import csv
