@@ -1,8 +1,10 @@
 import argparse
+import collections
 import csv
 import json
 import math
 from pathlib import Path
+from typing import TypeAlias
 
 import numpy as np
 from tqdm import tqdm
@@ -15,6 +17,16 @@ from hloc.utils.read_write_model import (
     Point3D,
     write_model,
 )
+
+FeaturePoint = collections.namedtuple("FeaturePoint", ["id", "x", "y"])
+FeaturePointRef = collections.namedtuple("FeaturePointRef", ["shot_id", "track_id"])
+ImagePointsMap: TypeAlias = dict[str, list[FeaturePoint]]
+Points2dMap: TypeAlias = dict[int, list[FeaturePointRef]]
+CamerasMap: TypeAlias = dict[str, Camera]
+Points3dMap: TypeAlias = dict[int, Point3D]
+ImagesMap: TypeAlias = dict[int, Image]
+StrIdsMap: TypeAlias = dict[str, int]
+IntIdsMap: TypeAlias = dict[int, int]
 
 
 def angle_axis_to_quaternion(angle_axis: np.ndarray) -> list[float]:
@@ -29,10 +41,10 @@ def angle_axis_to_quaternion(angle_axis: np.ndarray) -> list[float]:
     return np.array([qw, float(qx), float(qy), float(qz)])
 
 
-def read_tracks(opensfm_path):
+def read_tracks(opensfm_path: str) -> tuple[ImagePointsMap, Points2dMap]:
     logger.info("Reading OpenSfM tracks...")
-    images_points_map = {}
-    points_map = {}
+    images_points_map = ImagePointsMap()
+    points_map = Points2dMap()
     with open(opensfm_path / "tracks.csv", "r") as fin:
         tracks_reader = csv.reader(fin, delimiter="\t")
         next(tracks_reader, None)  # skip the header
@@ -45,25 +57,19 @@ def read_tracks(opensfm_path):
             img = images_points_map.get(shot_id, None)
             if img is None:
                 images_points_map[shot_id] = list()
-            images_points_map[shot_id].append(
-                {"x": x, "y": y, "feature_id": feature_id}
-            )
+            feature_point = FeaturePoint(feature_id, x, y)
+            images_points_map[shot_id].append(feature_point)
             point = points_map.get(feature_id, None)
             if point is None:
                 points_map[feature_id] = list()
-            points_map[feature_id].append({"shot_id": shot_id, "track_id": track_id})
+            feature_point_ref = FeaturePointRef(shot_id, track_id)
+            points_map[feature_id].append(feature_point_ref)
     return images_points_map, points_map
 
 
-def read_opensfm_model(opensfm_path, images_points_map, points_map):
-    logger.info("Reading OpenSfM reconstruction...")
-    with open(opensfm_path / "reconstruction.json", "r") as fin:
-        reconstructions_json = json.load(fin)
-    assert len(reconstructions_json) == 1
-    reconstruction_json = reconstructions_json[0]
-    logger.info("Reading cameras...")
-    camera_ids_map = {}
-    cameras = {}
+def read_cameras(reconstruction_json: dict) -> tuple[CamerasMap, StrIdsMap]:
+    camera_ids_map = StrIdsMap()
+    cameras = CamerasMap()
     for idx, (key, value) in enumerate(reconstruction_json["cameras"].items()):
         projection_type = value["projection_type"]
         assert projection_type == "spherical"
@@ -80,23 +86,35 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
             params=[],
         )
         cameras[camera_id] = camera
-    image_ids_map = {}
+    return cameras, camera_ids_map
+
+
+def sniff_images(reconstruction_json: dict) -> StrIdsMap:
+    image_ids_map = StrIdsMap()
     for idx, key in enumerate(reconstruction_json["shots"].keys()):
         image_ids_map[key] = idx
-    logger.info("Reading points...")
-    point3d_ids_map = {}
-    points3d = {}
+    return image_ids_map
+
+
+def read_points(
+    reconstruction_json: dict,
+    points_map: Points2dMap,
+    image_ids_map: StrIdsMap,
+) -> tuple[Points3dMap, IntIdsMap]:
+    point3d_ids_map = IntIdsMap()
+    points3d = Points3dMap()
     num_points = len(reconstruction_json["points"])
     pbar = tqdm(total=num_points, unit="pts")
     for idx, (key, value) in enumerate(reconstruction_json["points"].items()):
-        point3d_ids_map[int(key)] = idx
+        point_id = int(key)
+        point3d_ids_map[point_id] = idx
         coordinates = value["coordinates"]
         color = value["color"]
         xyz = np.array([coordinates[0], coordinates[1], coordinates[2]], float)
         color_arr = np.array([color[0], color[1], color[2]], int)
-        points = points_map.get(key, [])
-        image_ids = np.array([image_ids_map[p["shot_id"]] for p in points], int)
-        points2d_idxs = np.array([p["track_id"] for p in points], int)
+        points = points_map.get(point_id, [])
+        image_ids = np.array([image_ids_map[p.shot_id] for p in points], int)
+        points2d_idxs = np.array([p.track_id for p in points], int)
         point = Point3D(
             id=idx,
             xyz=xyz,
@@ -108,8 +126,17 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
         points3d[idx] = point
         pbar.update(1)
     pbar.close()
-    logger.info("Reading images...")
-    images = {}
+    return points3d, point3d_ids_map
+
+
+def read_images(
+    reconstruction_json: dict,
+    camera_ids_map: StrIdsMap,
+    image_ids_map: StrIdsMap,
+    image_points_map: ImagePointsMap,
+    point3d_ids_map: IntIdsMap,
+) -> ImagesMap:
+    images = ImagesMap()
     for key, value in reconstruction_json["shots"].items():
         camera_id = camera_ids_map[value["camera"]]
         image_id = image_ids_map[key]
@@ -118,20 +145,16 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
         tvec = value["translation"]
         qvec = angle_axis_to_quaternion(rvec)
         tvec_arr = np.array([tvec[0], tvec[1], tvec[2]])
-        images_points = images_points_map.get(key, [])
+        images_points = image_points_map.get(key, [])
         xys = np.array(
-            [
-                [p["x"], p["y"]]
-                for p in images_points
-                if point3d_ids_map.get(p["feature_id"], None)
-            ],
+            [[p.x, p.y] for p in images_points if point3d_ids_map.get(p.id, None)],
             float,
         )
         point3d_ids = np.array(
             [
-                point3d_ids_map[p["feature_id"]]
+                point3d_ids_map[p.id]
                 for p in images_points
-                if point3d_ids_map.get(p["feature_id"], None)
+                if point3d_ids_map.get(p.id, None)
             ],
             int,
         )
@@ -145,11 +168,43 @@ def read_opensfm_model(opensfm_path, images_points_map, points_map):
             point3D_ids=point3d_ids,
         )
         images[image_id] = image
+    return images
+
+
+def read_opensfm_model(
+    opensfm_path: str,
+    images_points_map: ImagePointsMap,
+    points_map: Points2dMap,
+) -> tuple[CamerasMap, ImagesMap, Points3dMap]:
+    logger.info("Reading OpenSfM reconstruction...")
+    with open(opensfm_path / "reconstruction.json", "r") as fin:
+        reconstructions_json = json.load(fin)
+    assert len(reconstructions_json) == 1
+    reconstruction_json = reconstructions_json[0]
+    logger.info("Reading cameras...")
+    cameras, camera_ids_map = read_cameras(reconstruction_json)
+    logger.info("Sniffing images...")
+    image_ids_map = sniff_images(reconstruction_json)
+    logger.info("Reading points...")
+    points3d, point3d_ids_map = read_points(
+        reconstruction_json,
+        points_map,
+        image_ids_map,
+    )
+    logger.info("Reading images...")
+    images = read_images(
+        reconstruction_json,
+        camera_ids_map,
+        image_ids_map,
+        images_points_map,
+        point3d_ids_map,
+    )
     return cameras, images, points3d
 
 
-def main(opensfm_path, output):
+def main(opensfm_path: str, output: str) -> None:
     assert opensfm_path.exists(), opensfm_path
+
     logger.info("Reading the OpenSfM tracks...")
     images_points_map, points_map = read_tracks(opensfm_path)
 
