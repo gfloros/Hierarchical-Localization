@@ -1,3 +1,7 @@
+"""
+Pipeline for localizing spherical images.
+"""
+
 import argparse
 from pathlib import Path
 
@@ -6,6 +10,10 @@ from hloc import extract_features
 from hloc import logger
 from hloc import match_features
 from hloc import pairs_from_covisibility
+from hloc import visualization
+
+from hloc.utils.read_write_model import Reconstruction
+from hloc.utils.read_write_model import read_model
 
 
 class Dataset:
@@ -18,7 +26,7 @@ class Dataset:
         self.features = self.outputs / "features.h5"
         self.matches = self.outputs / "matches.h5"
         self.feature_conf = extract_features.confs["superpoint_inloc"]
-        self.matcher_conf = match_features.confs["superglue"]
+        self.matcher_conf = match_features.confs["superglue-indoor"]
         self.references = [
             p.relative_to(self.dataset / "mapping").as_posix()
             for p in (self.dataset / "mapping/").iterdir()
@@ -48,6 +56,34 @@ class Dataset:
             matches=self.matches,
         )
 
+    def visualize_3d_model(self) -> None:
+        cameras, images, points3D = read_model(self.sfm_dir)
+        reconstruction = Reconstruction(cameras, images, points3D)
+        logger.info("Visualizing 3D points by visibility...")
+        visualization.visualize_sfm_2d(
+            reconstruction,
+            self.dataset / "mapping",
+            color_by="visibility",
+            n=2,
+            save_path=self.outputs,
+        )
+        logger.info("Visualizing 3D points by track length...")
+        visualization.visualize_sfm_2d(
+            reconstruction,
+            self.dataset / "mapping",
+            color_by="track_length",
+            n=2,
+            save_path=self.outputs,
+        )
+        logger.info("Visualizing 3D points by depth...")
+        visualization.visualize_sfm_2d(
+            reconstruction,
+            self.dataset / "mapping",
+            color_by="depth",
+            n=2,
+            save_path=self.outputs,
+        )
+
 
 def main(dataset_name: str) -> None:
     # Set up dataset
@@ -65,6 +101,9 @@ def main(dataset_name: str) -> None:
 
     # 3D mapping
     dataset.do_3d_mapping()
+
+    # Visualize 3D model
+    dataset.visualize_3d_model()
 
 
 if __name__ == "__main__":
