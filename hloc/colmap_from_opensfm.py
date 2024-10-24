@@ -41,6 +41,16 @@ def angle_axis_to_quaternion(angle_axis: np.ndarray) -> list[float]:
     return np.array([qw, float(qx), float(qy), float(qz)])
 
 
+def denormalize_image_coordinates(
+    norm_coords: np.ndarray, width: int, height: int
+) -> np.ndarray:
+    size = max(width, height)
+    p = np.empty((len(norm_coords), 2))
+    p[:, 0] = norm_coords[:, 0] * size - 0.5 + width / 2.0
+    p[:, 1] = norm_coords[:, 1] * size - 0.5 + height / 2.0
+    return p
+
+
 def read_tracks(opensfm_path: str) -> tuple[ImagePointsMap, Points2dMap]:
     logger.info("Reading OpenSfM tracks...")
     images_points_map = ImagePointsMap()
@@ -135,6 +145,7 @@ def read_images(
     image_ids_map: StrIdsMap,
     image_points_map: ImagePointsMap,
     point3d_ids_map: IntIdsMap,
+    cameras_map: CamerasMap,
 ) -> ImagesMap:
     images = ImagesMap()
     for key, value in reconstruction_json["shots"].items():
@@ -146,10 +157,12 @@ def read_images(
         qvec = angle_axis_to_quaternion(rvec)
         tvec_arr = np.array([tvec[0], tvec[1], tvec[2]])
         images_points = image_points_map.get(key, [])
-        xys = np.array(
+        norm_xys = np.array(
             [[p.x, p.y] for p in images_points if point3d_ids_map.get(p.id, None)],
             float,
         )
+        camera = cameras_map[camera_id]
+        xys = denormalize_image_coordinates(norm_xys, camera.width, camera.height)
         point3d_ids = np.array(
             [
                 point3d_ids_map[p.id]
@@ -198,6 +211,7 @@ def read_opensfm_model(
         image_ids_map,
         images_points_map,
         point3d_ids_map,
+        cameras,
     )
     return cameras, images, points3d
 
