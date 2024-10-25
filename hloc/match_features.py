@@ -51,6 +51,14 @@ confs = {
             "sinkhorn_iterations": 5,
         },
     },
+    "superglue-indoor": {
+        "output": "matches-superglue",
+        "model": {
+            "name": "superglue",
+            "weights": "indoor",
+            "sinkhorn_iterations": 50,
+        },
+    },
     "NN-superpoint": {
         "output": "matches-NN-mutual-dist.7",
         "model": {

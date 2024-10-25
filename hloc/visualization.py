@@ -5,50 +5,59 @@ import numpy as np
 import pycolmap
 from matplotlib import cm
 
+from .utils.cf_wrappers import (
+    get_depths,
+    get_keypoints,
+    get_reg_image_ids,
+    get_track_lengths,
+)
 from .utils.io import read_image
-from .utils.viz import add_text, cm_RdGn, plot_images, plot_keypoints, plot_matches
+from .utils.read_write_model import Reconstruction
+from .utils.viz import (
+    add_text,
+    cm_RdGn,
+    plot_images,
+    plot_keypoints,
+    plot_matches,
+    save_plot,
+)
 
 
 def visualize_sfm_2d(
-    reconstruction, image_dir, color_by="visibility", selected=[], n=1, seed=0, dpi=75
+    reconstruction,
+    image_dir,
+    color_by="visibility",
+    selected=[],
+    n=1,
+    seed=0,
+    dpi=75,
+    save_path=None,
 ):
     assert image_dir.exists()
-    if not isinstance(reconstruction, pycolmap.Reconstruction):
-        reconstruction = pycolmap.Reconstruction(reconstruction)
+
+    if not isinstance(reconstruction, Reconstruction):
+        if not isinstance(reconstruction, pycolmap.Reconstruction):
+            reconstruction = pycolmap.Reconstruction(reconstruction)
 
     if not selected:
-        image_ids = reconstruction.reg_image_ids()
+        image_ids = get_reg_image_ids(reconstruction)
         selected = random.Random(seed).sample(image_ids, min(n, len(image_ids)))
 
     for i in selected:
         image = reconstruction.images[i]
-        keypoints = np.array([p.xy for p in image.points2D])
-        visible = np.array([p.has_point3D() for p in image.points2D])
+        keypoints, visible = get_keypoints(reconstruction, image)
 
         if color_by == "visibility":
             color = [(0, 0, 1) if v else (1, 0, 0) for v in visible]
             text = f"visible: {np.count_nonzero(visible)}/{len(visible)}"
         elif color_by == "track_length":
-            tl = np.array(
-                [
-                    reconstruction.points3D[p.point3D_id].track.length()
-                    if p.has_point3D()
-                    else 1
-                    for p in image.points2D
-                ]
-            )
+            tl = get_track_lengths(reconstruction, image)
             max_, med_ = np.max(tl), np.median(tl[tl > 1])
             tl = np.log(tl)
             color = cm.jet(tl / tl.max()).tolist()
             text = f"max/median track length: {max_}/{med_}"
         elif color_by == "depth":
-            p3ids = [p.point3D_id for p in image.points2D if p.has_point3D()]
-            z = np.array(
-                [
-                    (image.cam_from_world * reconstruction.points3D[j].xyz)[-1]
-                    for j in p3ids
-                ]
-            )
+            z = get_depths(reconstruction, image)
             z -= z.min()
             color = cm.jet(z / np.percentile(z, 99.9))
             text = f"visible: {np.count_nonzero(visible)}/{len(visible)}"
@@ -61,6 +70,8 @@ def visualize_sfm_2d(
         plot_keypoints([keypoints], colors=[color], ps=4)
         add_text(0, text)
         add_text(0, name, pos=(0.01, 0.01), fs=5, lcolor=None, va="bottom")
+        if save_path:
+            save_plot(save_path / f"{i}-{color_by}.png")
 
 
 def visualize_loc(

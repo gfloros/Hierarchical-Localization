@@ -50,6 +50,9 @@ BaseImage = collections.namedtuple(
 Point3D = collections.namedtuple(
     "Point3D", ["id", "xyz", "rgb", "error", "image_ids", "point2D_idxs"]
 )
+Reconstruction = collections.namedtuple(
+    "Reconstruction", ["cameras", "images", "points3D"]
+)
 
 
 class Image(BaseImage):
